@@ -13,6 +13,7 @@ import {
   Printer,
   RotateCcw,
   Search,
+  Settings2,
   ShieldAlert,
   Trash2,
   Upload,
@@ -163,10 +164,12 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState(sheetsApiUrl ? 'Connecting to Google Sheets...' : 'Using local demo data');
   const [syncError, setSyncError] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
+  const [sheetSources, setSheetSources] = useState([]);
   const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('pumpTrackerAdmin') === 'true');
   const [adminPin, setAdminPin] = useState(() => sessionStorage.getItem('pumpTrackerAdminPin') || '');
   const [adminPinInput, setAdminPinInput] = useState('');
   const [sheetInput, setSheetInput] = useState('');
+  const [sheetNameInput, setSheetNameInput] = useState('Pump Free-on-Loan Tracker Database');
   const [expandedQr, setExpandedQr] = useState(null);
   const [pumpForm, setPumpForm] = useState(emptyPump);
   const [query, setQuery] = useState('');
@@ -195,6 +198,7 @@ export default function App() {
         localStorage.setItem(storageKey, JSON.stringify(data.records));
         setSheetUrl(data.spreadsheetUrl || '');
         setSheetInput(data.spreadsheetUrl || '');
+        setSheetSources(data.sources || []);
         setSyncMessage('Live Google Sheet');
         setSyncError('');
       } catch (error) {
@@ -213,11 +217,26 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (isAdmin && adminPin) {
+      loadAdminSources(adminPin);
+    }
+    // Admin source list is loaded when the persisted admin session is restored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, adminPin]);
+
   function applyRecords(records, message = 'Saved to Google Sheet') {
     setPumps(records);
     localStorage.setItem(storageKey, JSON.stringify(records));
     setSyncMessage(message);
     setSyncError('');
+  }
+
+  function applySheetResponse(data, message) {
+    applyRecords(data.records || [], message);
+    setSheetUrl(data.spreadsheetUrl || '');
+    setSheetInput(data.spreadsheetUrl || '');
+    setSheetSources(data.sources || []);
   }
 
   async function saveToSheet(payload, fallbackRecords) {
@@ -242,7 +261,7 @@ export default function App() {
     setIsLoading(true);
     try {
       const data = await sheetRequest();
-      applyRecords(data.records, 'Refreshed from Google Sheet');
+      applyRecords(data.records || [], 'Refreshed from Google Sheet');
       if (data.spreadsheetUrl) {
         setSheetUrl(data.spreadsheetUrl);
         setSheetInput(data.spreadsheetUrl);
@@ -264,6 +283,7 @@ export default function App() {
     setIsAdmin(true);
     sessionStorage.setItem('pumpTrackerAdmin', 'true');
     sessionStorage.setItem('pumpTrackerAdminPin', pin);
+    loadAdminSources(pin);
   }
 
   function logoutAdmin() {
@@ -271,6 +291,28 @@ export default function App() {
     setAdminPin('');
     sessionStorage.removeItem('pumpTrackerAdmin');
     sessionStorage.removeItem('pumpTrackerAdminPin');
+  }
+
+  async function loadAdminSources(pin = adminPin) {
+    if (!pin || !sheetsApiUrl) return;
+    setIsLoading(true);
+    try {
+      const data = await sheetRequest({ action: 'listSources', adminPin: pin });
+      setSheetUrl(data.spreadsheetUrl || '');
+      setSheetInput(data.spreadsheetUrl || '');
+      setSheetSources(data.sources || []);
+      if (data.records) {
+        setPumps(data.records);
+        localStorage.setItem(storageKey, JSON.stringify(data.records));
+      }
+      setSyncMessage('Admin sheet sources loaded');
+      setSyncError('');
+    } catch (error) {
+      setSyncMessage('Unable to load sheet sources');
+      setSyncError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   const decoratedPumps = useMemo(
@@ -393,9 +435,7 @@ export default function App() {
     setIsSaving(true);
     try {
       const data = await sheetRequest({ action: 'setSpreadsheet', adminPin, spreadsheetUrl: sheetInput });
-      applyRecords(data.records, 'Connected to selected Google Sheet');
-      setSheetUrl(data.spreadsheetUrl || '');
-      setSheetInput(data.spreadsheetUrl || sheetInput);
+      applySheetResponse(data, 'Connected to selected Google Sheet');
     } catch (error) {
       setSyncMessage('Sheet change failed');
       setSyncError(error.message);
@@ -407,12 +447,23 @@ export default function App() {
   async function createNewSheet() {
     setIsSaving(true);
     try {
-      const data = await sheetRequest({ action: 'createSpreadsheet', adminPin });
-      applyRecords(data.records, 'Created new inventory sheet');
-      setSheetUrl(data.spreadsheetUrl || '');
-      setSheetInput(data.spreadsheetUrl || '');
+      const data = await sheetRequest({ action: 'createSpreadsheet', adminPin, sheetName: sheetNameInput });
+      applySheetResponse(data, 'Created and selected new inventory sheet');
     } catch (error) {
       setSyncMessage('Sheet creation failed');
+      setSyncError(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function switchSheetSource(source) {
+    setIsSaving(true);
+    try {
+      const data = await sheetRequest({ action: 'setSpreadsheet', adminPin, spreadsheetId: source.id });
+      applySheetResponse(data, `Viewing ${source.name}`);
+    } catch (error) {
+      setSyncMessage('Sheet switch failed');
       setSyncError(error.message);
     } finally {
       setIsSaving(false);
@@ -502,6 +553,74 @@ export default function App() {
               </a>
             )}
             {syncError && <small>{syncError}</small>}
+          </section>
+        )}
+
+        {isAdmin && (
+          <section className="admin-workbench" aria-label="Admin sheet controls">
+            <div className="admin-workbench-header">
+              <div>
+                <p className="eyebrow">Admin workspace</p>
+                <h2>Inventory source control</h2>
+              </div>
+              <button className="button ghost" type="button" onClick={() => loadAdminSources()} disabled={isSaving}>
+                <Settings2 size={16} />
+                Load sources
+              </button>
+            </div>
+
+            <div className="admin-source-grid">
+              <div className="source-card current-source">
+                <small>Current sheet for everyone</small>
+                <strong>{sheetSources.find((source) => source.isActive)?.name || 'Google Sheet inventory'}</strong>
+                <span>{sheetUrl ? new URL(sheetUrl).pathname.split('/')[3] : 'No sheet connected'}</span>
+                {sheetUrl && (
+                  <a className="button ghost" href={sheetUrl} target="_blank" rel="noreferrer">
+                    Open sheet
+                  </a>
+                )}
+              </div>
+
+              <form className="source-card" onSubmit={changeSheetSource}>
+                <small>Connect existing</small>
+                <label>
+                  Google Sheet URL or ID
+                  <input value={sheetInput} onChange={(event) => setSheetInput(event.target.value)} placeholder="Paste Google Sheet link or ID" />
+                </label>
+                <button className="button primary" type="submit" disabled={isSaving}>
+                  <Clipboard size={17} />
+                  Use this sheet
+                </button>
+              </form>
+
+              <div className="source-card">
+                <small>Create inventory</small>
+                <label>
+                  Sheet name
+                  <input value={sheetNameInput} onChange={(event) => setSheetNameInput(event.target.value)} placeholder="Inventory sheet name" />
+                </label>
+                <button className="button primary" type="button" onClick={createNewSheet} disabled={isSaving}>
+                  <Plus size={17} />
+                  Create and select
+                </button>
+              </div>
+
+              <div className="source-card source-list">
+                <small>Known inventory sheets</small>
+                <div>
+                  {sheetSources.map((source) => (
+                    <button className={`source-option ${source.isActive ? 'is-active' : ''}`} type="button" key={source.id} onClick={() => switchSheetSource(source)} disabled={isSaving || source.isActive}>
+                      <span>
+                        <strong>{source.name}</strong>
+                        <small>{source.id}</small>
+                      </span>
+                      <em>{source.isActive ? 'Active' : 'Use'}</em>
+                    </button>
+                  ))}
+                  {!sheetSources.length && <p className="empty-state compact">No connected sheets yet.</p>}
+                </div>
+              </div>
+            </div>
           </section>
         )}
 
@@ -657,7 +776,6 @@ export default function App() {
 
         <section className={`forms-grid ${!isAdmin ? 'single-form' : ''}`}>
           {isAdmin && (
-          <>
           <form className="form-panel" onSubmit={savePump}>
             <div className="section-heading">
               <div>
@@ -690,30 +808,6 @@ export default function App() {
               Save pump
             </button>
           </form>
-          <form className="form-panel sheet-source-panel" onSubmit={changeSheetSource}>
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Admin sheet source</p>
-                <h2>Connect inventory sheet</h2>
-              </div>
-              <Clipboard size={19} />
-            </div>
-            <label>
-              Google Sheet URL or ID
-              <input value={sheetInput} onChange={(event) => setSheetInput(event.target.value)} placeholder="Paste Google Sheet link or ID" />
-            </label>
-            <div className="sheet-source-actions">
-              <button className="button primary" type="submit" disabled={isSaving}>
-                <Clipboard size={17} />
-                Use this sheet
-              </button>
-              <button className="button ghost" type="button" onClick={createNewSheet} disabled={isSaving}>
-                <Plus size={17} />
-                Create new sheet
-              </button>
-            </div>
-          </form>
-          </>
           )}
 
           <form className="form-panel" onSubmit={issueSelected}>

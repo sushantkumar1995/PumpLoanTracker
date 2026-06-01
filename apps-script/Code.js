@@ -1,5 +1,6 @@
 const SCRIPT_PROPS = PropertiesService.getScriptProperties();
 const SHEET_ID_KEY = 'PUMP_TRACKER_SHEET_ID';
+const SHEET_SOURCES_KEY = 'PUMP_TRACKER_SHEET_SOURCES';
 const ADMIN_PIN_KEY = 'PUMP_TRACKER_ADMIN_PIN';
 const DEFAULT_ADMIN_PIN = 'admin123';
 const SHEET_NAME = 'Pumps';
@@ -58,20 +59,35 @@ function doPost(event) {
         ok: true,
         spreadsheetId: spreadsheet.getId(),
         spreadsheetUrl: spreadsheet.getUrl(),
+        sources: listSheetSources(),
         records: readRecords(sheet),
       });
     }
 
     if (body.action === 'createSpreadsheet') {
       requireAdmin(body.adminPin);
-      const spreadsheet = SpreadsheetApp.create('Pump Free-on-Loan Tracker Database');
+      const spreadsheet = SpreadsheetApp.create(value(body.sheetName) || 'Pump Free-on-Loan Tracker Database');
       SCRIPT_PROPS.setProperty(SHEET_ID_KEY, spreadsheet.getId());
       const sheet = getPumpSheet(spreadsheet);
+      rememberSheetSource(spreadsheet);
       return jsonResponse({
         ok: true,
         spreadsheetId: spreadsheet.getId(),
         spreadsheetUrl: spreadsheet.getUrl(),
+        sources: listSheetSources(),
         records: readRecords(sheet),
+      });
+    }
+
+    if (body.action === 'listSources') {
+      requireAdmin(body.adminPin);
+      const spreadsheet = getSpreadsheet();
+      return jsonResponse({
+        ok: true,
+        spreadsheetId: spreadsheet.getId(),
+        spreadsheetUrl: spreadsheet.getUrl(),
+        sources: listSheetSources(),
+        records: readRecords(getPumpSheet(spreadsheet)),
       });
     }
 
@@ -114,6 +130,7 @@ function setSpreadsheet(input) {
   if (!spreadsheetId) throw new Error('Valid Google Sheet URL or ID is required.');
   const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
   SCRIPT_PROPS.setProperty(SHEET_ID_KEY, spreadsheet.getId());
+  rememberSheetSource(spreadsheet);
   return spreadsheet;
 }
 
@@ -135,11 +152,49 @@ function requireAdmin(pin) {
 function getSpreadsheet() {
   const existingId = SCRIPT_PROPS.getProperty(SHEET_ID_KEY);
   if (existingId) {
-    return SpreadsheetApp.openById(existingId);
+    const spreadsheet = SpreadsheetApp.openById(existingId);
+    rememberSheetSource(spreadsheet);
+    return spreadsheet;
   }
   const spreadsheet = SpreadsheetApp.create('Pump Free-on-Loan Tracker Database');
   SCRIPT_PROPS.setProperty(SHEET_ID_KEY, spreadsheet.getId());
+  rememberSheetSource(spreadsheet);
   return spreadsheet;
+}
+
+function listSheetSources() {
+  const currentId = SCRIPT_PROPS.getProperty(SHEET_ID_KEY);
+  return getSheetSources().map(source => ({
+    ...source,
+    isActive: source.id === currentId,
+  }));
+}
+
+function getSheetSources() {
+  try {
+    const sources = JSON.parse(SCRIPT_PROPS.getProperty(SHEET_SOURCES_KEY) || '[]');
+    return Array.isArray(sources) ? sources : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function rememberSheetSource(spreadsheet) {
+  const now = new Date().toISOString();
+  const source = {
+    id: spreadsheet.getId(),
+    name: spreadsheet.getName(),
+    url: spreadsheet.getUrl(),
+    lastUsedAt: now,
+  };
+  const sources = getSheetSources();
+  const index = sources.findIndex(item => item.id === source.id);
+  if (index >= 0) {
+    sources[index] = { ...sources[index], ...source };
+  } else {
+    sources.unshift({ ...source, createdAt: now });
+  }
+  SCRIPT_PROPS.setProperty(SHEET_SOURCES_KEY, JSON.stringify(sources.slice(0, 25)));
 }
 
 function getPumpSheet(spreadsheet) {
