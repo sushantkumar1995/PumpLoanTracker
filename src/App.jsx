@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 
 const storageKey = 'free-on-loan-pump-tracker:v2';
+const sheetsApiUrl = import.meta.env.VITE_GOOGLE_SHEETS_API_URL || '';
 const statuses = ['Available', 'Active', 'Returned', 'Damaged', 'Lost', 'Replaced'];
 
 const seedPumps = [
@@ -130,6 +131,22 @@ function getStoredPumps() {
   }
 }
 
+async function sheetRequest(payload) {
+  if (!sheetsApiUrl) throw new Error('Google Sheets API URL is not configured.');
+  const options = payload
+    ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+      }
+    : undefined;
+  const response = await fetch(sheetsApiUrl, options);
+  if (!response.ok) throw new Error(`Google Sheets request failed: ${response.status}`);
+  const data = await response.json();
+  if (!data.ok) throw new Error(data.error || 'Google Sheets request failed.');
+  return data;
+}
+
 function pumpUrl(id) {
   const baseUrl = `${window.location.origin}${window.location.pathname}`;
   return `${baseUrl}?pump=${encodeURIComponent(id)}`;
@@ -137,6 +154,11 @@ function pumpUrl(id) {
 
 export default function App() {
   const [pumps, setPumps] = useState(getStoredPumps);
+  const [isLoading, setIsLoading] = useState(Boolean(sheetsApiUrl));
+  const [isSaving, setIsSaving] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(sheetsApiUrl ? 'Connecting to Google Sheets...' : 'Using local demo data');
+  const [syncError, setSyncError] = useState('');
+  const [sheetUrl, setSheetUrl] = useState('');
   const [pumpForm, setPumpForm] = useState(emptyPump);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
@@ -145,11 +167,68 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(pumps));
     if (!pumps.some((pump) => pump.id === selectedPumpId)) {
       setSelectedPumpId(pumps[0]?.id || '');
     }
   }, [pumps, selectedPumpId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPumps() {
+      if (!sheetsApiUrl) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const data = await sheetRequest();
+        if (cancelled) return;
+        setPumps(data.records);
+        localStorage.setItem(storageKey, JSON.stringify(data.records));
+        setSheetUrl(data.spreadsheetUrl || '');
+        setSyncMessage('Live Google Sheet');
+        setSyncError('');
+      } catch (error) {
+        if (cancelled) return;
+        setSyncMessage('Offline fallback');
+        setSyncError(error.message);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+
+    loadPumps();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function applyRecords(records, message = 'Saved to Google Sheet') {
+    setPumps(records);
+    localStorage.setItem(storageKey, JSON.stringify(records));
+    setSyncMessage(message);
+    setSyncError('');
+  }
+
+  async function saveToSheet(payload, fallbackRecords) {
+    setIsSaving(true);
+    try {
+      const data = await sheetRequest(payload);
+      applyRecords(data.records);
+      if (data.spreadsheetUrl) setSheetUrl(data.spreadsheetUrl);
+      return data.records;
+    } catch (error) {
+      setPumps(fallbackRecords);
+      localStorage.setItem(storageKey, JSON.stringify(fallbackRecords));
+      setSyncMessage('Saved locally only');
+      setSyncError(error.message);
+      return fallbackRecords;
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   const decoratedPumps = useMemo(
     () =>
@@ -183,30 +262,31 @@ export default function App() {
     { total: 0, Available: 0, Active: 0, Returned: 0, Damaged: 0, Lost: 0, Replaced: 0, dueReturn: 0, exception: 0 },
   );
 
-  function savePump(event) {
+  async function savePump(event) {
     event.preventDefault();
     const nextPump = {
       ...pumpForm,
       id: pumpForm.id.trim().toUpperCase(),
       updatedAt: today(),
     };
-    setPumps((current) => {
-      const exists = current.some((pump) => pump.id === nextPump.id);
-      return exists ? current.map((pump) => (pump.id === nextPump.id ? nextPump : pump)) : [nextPump, ...current];
-    });
+    const exists = pumps.some((pump) => pump.id === nextPump.id);
+    const fallbackRecords = exists ? pumps.map((pump) => (pump.id === nextPump.id ? nextPump : pump)) : [nextPump, ...pumps];
+    await saveToSheet({ record: nextPump }, fallbackRecords);
     setSelectedPumpId(nextPump.id);
     setPumpForm(emptyPump);
   }
 
-  function updateSelected(changes) {
+  async function updateSelected(changes) {
     if (!selectedPump) return;
-    setPumps((current) => current.map((pump) => (pump.id === selectedPump.id ? { ...pump, ...changes, updatedAt: today() } : pump)));
+    const nextPump = { ...selectedPump, ...changes, updatedAt: today() };
+    const fallbackRecords = pumps.map((pump) => (pump.id === selectedPump.id ? nextPump : pump));
+    await saveToSheet({ record: nextPump }, fallbackRecords);
   }
 
-  function issueSelected(event) {
+  async function issueSelected(event) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    updateSelected({
+    await updateSelected({
       customerName: formData.get('customerName'),
       siteLocation: formData.get('siteLocation'),
       contactPerson: formData.get('contactPerson'),
@@ -273,8 +353,14 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  function removePump(id) {
-    setPumps((current) => current.filter((pump) => pump.id !== id));
+  async function removePump(id) {
+    const fallbackRecords = pumps.filter((pump) => pump.id !== id);
+    await saveToSheet({ action: 'delete', id }, fallbackRecords);
+  }
+
+  async function resetDemo() {
+    await saveToSheet({ action: 'bulkReplace', records: seedPumps }, seedPumps);
+    setSelectedPumpId(seedPumps[0].id);
   }
 
   return (
@@ -337,11 +423,21 @@ export default function App() {
             <p className="eyebrow">Free-on-loan inventory</p>
             <h1>Pump issue and return tracker</h1>
           </div>
-          <button className="button ghost" type="button" onClick={() => setPumps(seedPumps)}>
+          <button className="button ghost" type="button" onClick={resetDemo} disabled={isSaving}>
             <RotateCcw size={16} />
             Reset demo
           </button>
         </header>
+
+        <section className={`sync-banner ${syncError ? 'has-error' : ''}`} aria-live="polite">
+          <span>{isLoading ? 'Loading pump records...' : syncMessage}</span>
+          {sheetUrl && (
+            <a href={sheetUrl} target="_blank" rel="noreferrer">
+              Open Google Sheet
+            </a>
+          )}
+          {syncError && <small>{syncError}</small>}
+        </section>
 
         <section className="controls-panel" aria-label="Pump filters">
           <label className="search-field">
@@ -443,7 +539,7 @@ export default function App() {
 
                 <div className="quick-actions">
                   {statuses.map((item) => (
-                    <button className={`status-action ${selectedPump.status === item ? 'is-active' : ''}`} type="button" key={item} onClick={() => updateSelected({ status: item })}>
+                    <button className={`status-action ${selectedPump.status === item ? 'is-active' : ''}`} type="button" key={item} onClick={() => updateSelected({ status: item })} disabled={isSaving}>
                       {item}
                     </button>
                   ))}
@@ -496,7 +592,7 @@ export default function App() {
                 <textarea value={pumpForm.remarks} onChange={(event) => setPumpForm({ ...pumpForm, remarks: event.target.value })} rows="3" />
               </label>
             </div>
-            <button className="button primary" type="submit">
+            <button className="button primary" type="submit" disabled={isSaving}>
               <PackageCheck size={17} />
               Save pump
             </button>
@@ -523,7 +619,7 @@ export default function App() {
                 <textarea name="remarks" defaultValue={selectedPump?.remarks || ''} rows="3" key={`${selectedPump?.id}-remarks`} />
               </label>
             </div>
-            <button className="button primary" type="submit" disabled={!selectedPump}>
+            <button className="button primary" type="submit" disabled={!selectedPump || isSaving}>
               <Upload size={17} />
               Issue / update pump
             </button>

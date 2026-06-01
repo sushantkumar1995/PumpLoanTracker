@@ -292,7 +292,8 @@ textarea:focus-visible,
 .controls-panel,
 .loan-ledger,
 .detail-panel,
-.form-panel {
+.form-panel,
+.sync-banner {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: var(--radius);
@@ -301,6 +302,32 @@ textarea:focus-visible,
 
 .controls-panel {
   padding: 12px;
+}
+
+.sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.sync-banner a {
+  color: var(--accent-deep);
+  text-decoration: none;
+}
+
+.sync-banner small {
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.sync-banner.has-error {
+  border-color: oklch(82% 0.06 30);
+  background: oklch(96% 0.025 30);
 }
 
 .search-field {
@@ -700,6 +727,7 @@ textarea {
 
   .topbar,
   .controls-panel,
+  .sync-banner,
   .section-heading {
     align-items: stretch;
     flex-direction: column;
