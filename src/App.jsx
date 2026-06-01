@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
-  CameraOff,
   CheckCircle2,
   Clipboard,
   Download,
@@ -15,7 +14,6 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
-  ScanLine,
   Trash2,
   Upload,
   UserRound,
@@ -155,18 +153,7 @@ function pumpUrl(id) {
 }
 
 function qrImageUrl(id) {
-  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(pumpUrl(id))}`;
-}
-
-function extractPumpCode(rawValue) {
-  const raw = String(rawValue || '').trim();
-  if (!raw) return '';
-  try {
-    const url = new URL(raw);
-    return (url.searchParams.get('pump') || raw).trim().toUpperCase();
-  } catch {
-    return raw.trim().toUpperCase();
-  }
+  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(pumpUrl(id))}`;
 }
 
 export default function App() {
@@ -179,28 +166,18 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('pumpTrackerAdmin') === 'true');
   const [adminPin, setAdminPin] = useState(() => sessionStorage.getItem('pumpTrackerAdminPin') || '');
   const [adminPinInput, setAdminPinInput] = useState('');
-  const [scannerActive, setScannerActive] = useState(false);
-  const [scannerError, setScannerError] = useState('');
+  const [sheetInput, setSheetInput] = useState('');
+  const [expandedQr, setExpandedQr] = useState(null);
   const [pumpForm, setPumpForm] = useState(emptyPump);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [selectedPumpId, setSelectedPumpId] = useState(() => new URLSearchParams(window.location.search).get('pump') || seedPumps[0].id);
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const scanTimerRef = useRef(null);
 
   useEffect(() => {
     if (!pumps.some((pump) => pump.id === selectedPumpId)) {
       setSelectedPumpId(pumps[0]?.id || '');
     }
   }, [pumps, selectedPumpId]);
-
-  useEffect(
-    () => () => {
-      stopScanner();
-    },
-    [],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -217,6 +194,7 @@ export default function App() {
         setPumps(data.records);
         localStorage.setItem(storageKey, JSON.stringify(data.records));
         setSheetUrl(data.spreadsheetUrl || '');
+        setSheetInput(data.spreadsheetUrl || '');
         setSyncMessage('Live Google Sheet');
         setSyncError('');
       } catch (error) {
@@ -260,6 +238,23 @@ export default function App() {
     }
   }
 
+  async function refreshFromSheet() {
+    setIsLoading(true);
+    try {
+      const data = await sheetRequest();
+      applyRecords(data.records, 'Refreshed from Google Sheet');
+      if (data.spreadsheetUrl) {
+        setSheetUrl(data.spreadsheetUrl);
+        setSheetInput(data.spreadsheetUrl);
+      }
+    } catch (error) {
+      setSyncMessage('Refresh failed');
+      setSyncError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   function loginAdmin(event) {
     event.preventDefault();
     const pin = adminPinInput.trim();
@@ -276,61 +271,6 @@ export default function App() {
     setAdminPin('');
     sessionStorage.removeItem('pumpTrackerAdmin');
     sessionStorage.removeItem('pumpTrackerAdminPin');
-  }
-
-  function handleScanResult(rawValue) {
-    const normalized = extractPumpCode(rawValue);
-    const found = decoratedPumps.find((pump) => pump.id.toUpperCase() === normalized || pump.serialNo.toUpperCase() === normalized);
-    if (found) {
-      setSelectedPumpId(found.id);
-      setQuery(found.id);
-      stopScanner();
-    } else {
-      setPumpForm({ ...emptyPump, id: normalized });
-    }
-  }
-
-  async function startScanner() {
-    setScannerError('');
-    if (!('BarcodeDetector' in window)) {
-      setScannerError('QR scanning is not supported in this browser. Use global search to open a pump.');
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      setScannerActive(true);
-      await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] });
-      scanTimerRef.current = window.setInterval(async () => {
-        if (!videoRef.current || videoRef.current.readyState < 2) return;
-        const codes = await detector.detect(videoRef.current);
-        if (codes[0]?.rawValue) {
-          handleScanResult(codes[0].rawValue);
-        }
-      }, 700);
-    } catch (error) {
-      setScannerError(error.message || 'Unable to open camera.');
-      stopScanner();
-    }
-  }
-
-  function stopScanner() {
-    if (scanTimerRef.current) {
-      window.clearInterval(scanTimerRef.current);
-      scanTimerRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-    setScannerActive(false);
   }
 
   const decoratedPumps = useMemo(
@@ -448,9 +388,35 @@ export default function App() {
     await saveToSheet({ action: 'delete', id, adminPin }, fallbackRecords);
   }
 
-  async function resetDemo() {
-    await saveToSheet({ action: 'bulkReplace', adminPin, records: seedPumps }, seedPumps);
-    setSelectedPumpId(seedPumps[0].id);
+  async function changeSheetSource(event) {
+    event.preventDefault();
+    setIsSaving(true);
+    try {
+      const data = await sheetRequest({ action: 'setSpreadsheet', adminPin, spreadsheetUrl: sheetInput });
+      applyRecords(data.records, 'Connected to selected Google Sheet');
+      setSheetUrl(data.spreadsheetUrl || '');
+      setSheetInput(data.spreadsheetUrl || sheetInput);
+    } catch (error) {
+      setSyncMessage('Sheet change failed');
+      setSyncError(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function createNewSheet() {
+    setIsSaving(true);
+    try {
+      const data = await sheetRequest({ action: 'createSpreadsheet', adminPin });
+      applyRecords(data.records, 'Created new inventory sheet');
+      setSheetUrl(data.spreadsheetUrl || '');
+      setSheetInput(data.spreadsheetUrl || '');
+    } catch (error) {
+      setSyncMessage('Sheet creation failed');
+      setSyncError(error.message);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -461,7 +427,7 @@ export default function App() {
             <Wrench size={24} />
           </span>
           <div>
-            <p>TASKI / Diversey</p>
+            <p>Diversey India</p>
             <strong>Pump Tracker</strong>
           </div>
         </div>
@@ -521,31 +487,29 @@ export default function App() {
             <p className="eyebrow">Free-on-loan inventory</p>
             <h1>Pump issue and return tracker</h1>
           </div>
-          <button className="button ghost" type="button" onClick={resetDemo} disabled={isSaving || !isAdmin}>
+          <button className="button ghost" type="button" onClick={refreshFromSheet} disabled={isLoading || isSaving}>
             <RotateCcw size={16} />
-            Reset demo
+            Refresh
           </button>
         </header>
 
-        <section className={`sync-banner ${syncError ? 'has-error' : ''}`} aria-live="polite">
-          <span>{isLoading ? 'Loading pump records...' : syncMessage}</span>
-          {sheetUrl && (
-            <a href={sheetUrl} target="_blank" rel="noreferrer">
-              Open Google Sheet
-            </a>
-          )}
-          {syncError && <small>{syncError}</small>}
-        </section>
+        {isAdmin && (
+          <section className={`sync-banner ${syncError ? 'has-error' : ''}`} aria-live="polite">
+            <span>{isLoading ? 'Loading pump records...' : syncMessage}</span>
+            {sheetUrl && (
+              <a href={sheetUrl} target="_blank" rel="noreferrer">
+                Open Google Sheet
+              </a>
+            )}
+            {syncError && <small>{syncError}</small>}
+          </section>
+        )}
 
         <section className="controls-panel" aria-label="Pump filters">
           <label className="search-field">
             <Search size={17} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pump, customer, serial, site" />
           </label>
-          <button className="button ghost scan-trigger" type="button" onClick={scannerActive ? stopScanner : startScanner}>
-            {scannerActive ? <CameraOff size={16} /> : <ScanLine size={16} />}
-            {scannerActive ? 'Stop scan' : 'Scan QR'}
-          </button>
           <div className="segmented" aria-label="Filter by status">
             {['All', ...statuses].map((item) => (
               <button className={status === item ? 'is-active' : ''} type="button" key={item} onClick={() => setStatus(item)}>
@@ -554,17 +518,6 @@ export default function App() {
             ))}
           </div>
         </section>
-
-        {(scannerActive || scannerError) && (
-          <section className={`scanner-panel ${scannerError ? 'has-error' : ''}`} aria-live="polite">
-            {scannerActive && (
-              <div className="camera-frame">
-                <video ref={videoRef} playsInline muted />
-              </div>
-            )}
-            {scannerError && <small className="scan-error">{scannerError}</small>}
-          </section>
-        )}
 
         <section className="content-grid">
           <div className="loan-ledger">
@@ -622,7 +575,9 @@ export default function App() {
                 </div>
 
                 <div className="barcode-label">
-                  <img src={qrImageUrl(selectedPump.id)} alt={`QR code for ${selectedPump.id}`} />
+                  <button className="qr-button" type="button" onClick={() => setExpandedQr(selectedPump)} aria-label={`Enlarge QR code for ${selectedPump.id}`}>
+                    <img src={qrImageUrl(selectedPump.id)} alt={`QR code for ${selectedPump.id}`} />
+                  </button>
                   <div>
                     <small>QR code opens this pump</small>
                     <strong>{selectedPump.id}</strong>
@@ -702,6 +657,7 @@ export default function App() {
 
         <section className={`forms-grid ${!isAdmin ? 'single-form' : ''}`}>
           {isAdmin && (
+          <>
           <form className="form-panel" onSubmit={savePump}>
             <div className="section-heading">
               <div>
@@ -734,6 +690,30 @@ export default function App() {
               Save pump
             </button>
           </form>
+          <form className="form-panel sheet-source-panel" onSubmit={changeSheetSource}>
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Admin sheet source</p>
+                <h2>Connect inventory sheet</h2>
+              </div>
+              <Clipboard size={19} />
+            </div>
+            <label>
+              Google Sheet URL or ID
+              <input value={sheetInput} onChange={(event) => setSheetInput(event.target.value)} placeholder="Paste Google Sheet link or ID" />
+            </label>
+            <div className="sheet-source-actions">
+              <button className="button primary" type="submit" disabled={isSaving}>
+                <Clipboard size={17} />
+                Use this sheet
+              </button>
+              <button className="button ghost" type="button" onClick={createNewSheet} disabled={isSaving}>
+                <Plus size={17} />
+                Create new sheet
+              </button>
+            </div>
+          </form>
+          </>
           )}
 
           <form className="form-panel" onSubmit={issueSelected}>
@@ -764,6 +744,18 @@ export default function App() {
           </form>
         </section>
       </section>
+      {expandedQr && (
+        <div className="qr-overlay" role="dialog" aria-modal="true" aria-label={`QR code for ${expandedQr.id}`} onClick={() => setExpandedQr(null)}>
+          <div className="qr-dialog" onClick={(event) => event.stopPropagation()}>
+            <button className="icon-button qr-close" type="button" aria-label="Close QR preview" onClick={() => setExpandedQr(null)}>
+              X
+            </button>
+            <img src={qrImageUrl(expandedQr.id)} alt={`QR code for ${expandedQr.id}`} />
+            <strong>{expandedQr.id}</strong>
+            <span>{expandedQr.model}</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

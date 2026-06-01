@@ -1,24 +1,25 @@
 :root {
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  color: oklch(24% 0.016 82);
-  background: oklch(96.5% 0.018 84);
+  color: oklch(24% 0.018 252);
+  background: oklch(96.5% 0.016 245);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --surface: oklch(98.3% 0.012 84);
-  --panel: oklch(93.7% 0.018 82);
-  --panel-strong: oklch(90.4% 0.023 80);
-  --text: oklch(24% 0.016 82);
-  --muted: oklch(48% 0.024 78);
-  --line: oklch(84% 0.023 78);
-  --accent: oklch(51% 0.115 155);
-  --accent-deep: oklch(39% 0.105 154);
+  --surface: oklch(98.2% 0.01 245);
+  --panel: oklch(93.6% 0.02 244);
+  --panel-strong: oklch(90.5% 0.03 244);
+  --text: oklch(24% 0.018 252);
+  --muted: oklch(46% 0.032 248);
+  --line: oklch(84% 0.026 245);
+  --accent: oklch(43% 0.22 281);
+  --accent-deep: oklch(31% 0.19 281);
+  --hygiene: oklch(49% 0.13 154);
   --warning: oklch(64% 0.13 62);
   --danger: oklch(55% 0.16 30);
   --success: oklch(50% 0.12 152);
   --radius: 8px;
-  --shadow: 0 18px 42px oklch(33% 0.04 78 / 0.12);
+  --shadow: 0 18px 42px oklch(28% 0.05 245 / 0.12);
 }
 
 * {
@@ -50,8 +51,8 @@ button {
 }
 
 .sidebar {
-  background: oklch(29% 0.035 88);
-  color: oklch(95% 0.013 88);
+  background: oklch(24% 0.082 281);
+  color: oklch(96% 0.012 250);
   padding: 28px 20px;
   position: sticky;
   top: 0;
@@ -73,7 +74,7 @@ button {
 }
 
 .brand-lockup p {
-  color: oklch(80% 0.022 88);
+  color: oklch(82% 0.035 250);
   font-size: 0.82rem;
 }
 
@@ -90,7 +91,7 @@ button {
   height: 42px;
   border-radius: var(--radius);
   background: oklch(82% 0.09 154 / 0.16);
-  color: oklch(79% 0.12 154);
+  color: oklch(81% 0.12 154);
 }
 
 .summary-stack {
@@ -104,15 +105,15 @@ button {
   align-items: center;
   gap: 12px;
   padding: 14px;
-  border: 1px solid oklch(46% 0.04 88);
+  border: 1px solid oklch(45% 0.065 280);
   border-radius: var(--radius);
-  background: oklch(35% 0.034 88);
+  background: oklch(30% 0.075 281);
   min-width: 0;
 }
 
 .metric.strong {
-  background: oklch(38% 0.055 151);
-  border-color: oklch(54% 0.08 151);
+  background: oklch(34% 0.115 281);
+  border-color: oklch(50% 0.16 281);
 }
 
 .metric small,
@@ -128,7 +129,7 @@ button {
 }
 
 .metric small {
-  color: oklch(78% 0.02 88);
+  color: oklch(81% 0.032 250);
 }
 
 .metric strong {
@@ -151,44 +152,25 @@ button {
   gap: 8px;
   min-height: 42px;
   padding: 0 10px;
-  border: 1px solid oklch(49% 0.04 88);
+  border: 1px solid oklch(46% 0.07 281);
   border-radius: var(--radius);
-  background: oklch(29% 0.03 88);
+  background: oklch(24% 0.065 281);
 }
 
 .scan-row input {
   min-height: 38px;
   border: 0;
   padding: 0;
-  color: oklch(96% 0.012 88);
+  color: oklch(96% 0.012 250);
   background: transparent;
   text-transform: uppercase;
 }
 
-.camera-frame {
-  overflow: hidden;
-  border: 1px solid oklch(52% 0.045 88);
-  border-radius: var(--radius);
-  background: oklch(23% 0.02 88);
-  aspect-ratio: 4 / 3;
-}
-
-.camera-frame video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.scan-error {
-  color: oklch(82% 0.09 35);
-  font-weight: 650;
-}
-
 .admin-box {
   padding: 14px;
-  border: 1px solid oklch(46% 0.04 88);
+  border: 1px solid oklch(45% 0.065 280);
   border-radius: var(--radius);
-  background: oklch(35% 0.034 88);
+  background: oklch(30% 0.075 281);
 }
 
 .admin-box form,
@@ -199,7 +181,7 @@ button {
 
 .admin-box small,
 .admin-box label {
-  color: oklch(84% 0.019 88);
+  color: oklch(84% 0.026 250);
 }
 
 .admin-box strong {
@@ -312,8 +294,7 @@ textarea:focus-visible,
 .loan-ledger,
 .detail-panel,
 .form-panel,
-.sync-banner,
-.scanner-panel {
+.sync-banner {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: var(--radius);
@@ -323,15 +304,6 @@ textarea:focus-visible,
 .controls-panel {
   padding: 12px;
   min-width: 0;
-}
-
-.scanner-panel {
-  padding: 12px;
-}
-
-.scanner-panel.has-error {
-  border-color: oklch(82% 0.06 30);
-  background: oklch(96% 0.025 30);
 }
 
 .sync-banner {
@@ -368,12 +340,8 @@ textarea:focus-visible,
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0 12px;
-  background: oklch(96.8% 0.012 84);
+  background: oklch(96.8% 0.012 245);
   flex: 1;
-}
-
-.scan-trigger {
-  flex: 0 0 auto;
 }
 
 .search-field input {
@@ -564,7 +532,17 @@ textarea:focus-visible,
   background: oklch(94% 0.035 154);
 }
 
-.barcode-label img {
+.qr-button {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.qr-button img,
+.qr-dialog img {
   width: 72px;
   height: 72px;
   border-radius: 6px;
@@ -580,6 +558,48 @@ textarea:focus-visible,
   display: block;
   margin-top: 2px;
   font-size: 1.14rem;
+}
+
+.qr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: oklch(18% 0.055 281 / 0.72);
+}
+
+.qr-dialog {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(420px, 100%);
+  padding: 28px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px oklch(16% 0.07 281 / 0.35);
+}
+
+.qr-dialog img {
+  width: min(280px, 72vw);
+  height: min(280px, 72vw);
+}
+
+.qr-dialog strong {
+  font-size: 1.4rem;
+}
+
+.qr-dialog span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.qr-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
 }
 
 .compact-button {
@@ -694,6 +714,17 @@ textarea:focus-visible,
 
 .forms-grid.single-form {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.sheet-source-panel {
+  grid-column: 1 / -1;
+}
+
+.sheet-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .field-grid {
@@ -863,12 +894,26 @@ textarea {
     gap: 14px;
   }
 
+  .summary-stack {
+    grid-template-columns: 1fr;
+  }
+
   .table-row {
     grid-template-columns: 1fr;
   }
 
   .sidebar-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
+  }
+
+  .segmented {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .segmented button {
+    min-width: 0;
+    width: 100%;
   }
 
   .topbar h1 {
@@ -902,8 +947,7 @@ textarea {
   .controls-panel,
   .forms-grid,
   .icon-button,
-  .topbar .button,
-  .scanner-panel {
+  .topbar .button {
     display: none;
   }
 

@@ -50,6 +50,31 @@ function doGet() {
 function doPost(event) {
   try {
     const body = JSON.parse(event.postData.contents || '{}');
+    if (body.action === 'setSpreadsheet') {
+      requireAdmin(body.adminPin);
+      const spreadsheet = setSpreadsheet(body.spreadsheetId || body.spreadsheetUrl);
+      const sheet = getPumpSheet(spreadsheet);
+      return jsonResponse({
+        ok: true,
+        spreadsheetId: spreadsheet.getId(),
+        spreadsheetUrl: spreadsheet.getUrl(),
+        records: readRecords(sheet),
+      });
+    }
+
+    if (body.action === 'createSpreadsheet') {
+      requireAdmin(body.adminPin);
+      const spreadsheet = SpreadsheetApp.create('Pump Free-on-Loan Tracker Database');
+      SCRIPT_PROPS.setProperty(SHEET_ID_KEY, spreadsheet.getId());
+      const sheet = getPumpSheet(spreadsheet);
+      return jsonResponse({
+        ok: true,
+        spreadsheetId: spreadsheet.getId(),
+        spreadsheetUrl: spreadsheet.getUrl(),
+        records: readRecords(sheet),
+      });
+    }
+
     const spreadsheet = getSpreadsheet();
     const sheet = getPumpSheet(spreadsheet);
     seedIfEmpty(sheet);
@@ -82,6 +107,22 @@ function doPost(event) {
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error) }, 400);
   }
+}
+
+function setSpreadsheet(input) {
+  const spreadsheetId = parseSpreadsheetId(input);
+  if (!spreadsheetId) throw new Error('Valid Google Sheet URL or ID is required.');
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  SCRIPT_PROPS.setProperty(SHEET_ID_KEY, spreadsheet.getId());
+  return spreadsheet;
+}
+
+function parseSpreadsheetId(input) {
+  const raw = value(input);
+  if (!raw) return '';
+  const match = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match) return match[1];
+  return raw;
 }
 
 function requireAdmin(pin) {
