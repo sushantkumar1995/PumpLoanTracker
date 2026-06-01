@@ -180,12 +180,54 @@ button {
 
 .scan-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
 .hidden-input {
   display: none;
+}
+
+.camera-frame {
+  overflow: hidden;
+  border: 1px solid oklch(52% 0.045 88);
+  border-radius: var(--radius);
+  background: oklch(23% 0.02 88);
+  aspect-ratio: 4 / 3;
+}
+
+.camera-frame video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-error {
+  color: oklch(82% 0.09 35);
+  font-weight: 650;
+}
+
+.admin-box {
+  padding: 14px;
+  border: 1px solid oklch(46% 0.04 88);
+  border-radius: var(--radius);
+  background: oklch(35% 0.034 88);
+}
+
+.admin-box form,
+.admin-box {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-box small,
+.admin-box label {
+  color: oklch(84% 0.019 88);
+}
+
+.admin-box strong {
+  display: block;
+  margin-top: 3px;
 }
 
 .workspace {
@@ -519,7 +561,7 @@ textarea:focus-visible,
 
 .barcode-label {
   display: grid;
-  grid-template-columns: 42px 1fr auto;
+  grid-template-columns: 72px 1fr auto;
   align-items: center;
   gap: 12px;
   margin: 16px 0;
@@ -529,8 +571,11 @@ textarea:focus-visible,
   background: oklch(94% 0.035 154);
 }
 
-.barcode-label svg {
-  color: var(--accent-deep);
+.barcode-label img {
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  background: oklch(98.5% 0.005 84);
 }
 
 .barcode-label small,
@@ -584,6 +629,16 @@ textarea:focus-visible,
   align-items: center;
   gap: 8px;
   margin: 0;
+}
+
+.outcome-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: oklch(96.6% 0.012 84);
 }
 
 .detail-list {
@@ -642,6 +697,10 @@ textarea:focus-visible,
   display: grid;
   grid-template-columns: 1.1fr 0.9fr;
   gap: 20px;
+}
+
+.forms-grid.single-form {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .field-grid {
@@ -817,7 +876,7 @@ textarea {
   }
 
   .barcode-label {
-    grid-template-columns: 36px 1fr;
+    grid-template-columns: 72px 1fr;
   }
 
   .barcode-label .button {

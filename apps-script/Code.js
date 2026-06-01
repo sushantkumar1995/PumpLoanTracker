@@ -1,5 +1,7 @@
 const SCRIPT_PROPS = PropertiesService.getScriptProperties();
 const SHEET_ID_KEY = 'PUMP_TRACKER_SHEET_ID';
+const ADMIN_PIN_KEY = 'PUMP_TRACKER_ADMIN_PIN';
+const DEFAULT_ADMIN_PIN = 'admin123';
 const SHEET_NAME = 'Pumps';
 const HEADERS = [
   'Pump ID',
@@ -53,9 +55,18 @@ function doPost(event) {
     seedIfEmpty(sheet);
 
     if (body.action === 'bulkReplace' && Array.isArray(body.records)) {
+      requireAdmin(body.adminPin);
       replaceRecords(sheet, body.records);
     } else if (body.action === 'delete' && body.id) {
+      requireAdmin(body.adminPin);
       deleteRecord(sheet, body.id);
+    } else if (body.action === 'adminUpsert' && body.record) {
+      requireAdmin(body.adminPin);
+      upsertRecord(sheet, body.record);
+    } else if (body.action === 'updateStatus' && body.id) {
+      updateStatus(sheet, body.id, body.status, body.remarks);
+    } else if (body.action === 'updateAssignment' && body.id) {
+      updateAssignment(sheet, body.id, body.fields || {});
     } else if (body.record) {
       upsertRecord(sheet, body.record);
     } else {
@@ -70,6 +81,13 @@ function doPost(event) {
     });
   } catch (error) {
     return jsonResponse({ ok: false, error: String(error) }, 400);
+  }
+}
+
+function requireAdmin(pin) {
+  const configuredPin = SCRIPT_PROPS.getProperty(ADMIN_PIN_KEY) || DEFAULT_ADMIN_PIN;
+  if (String(pin || '') !== configuredPin) {
+    throw new Error('Admin PIN required for inventory changes.');
   }
 }
 
@@ -185,6 +203,43 @@ function deleteRecord(sheet, id) {
   if (index >= 0) {
     sheet.deleteRow(index + 2);
   }
+}
+
+function updateStatus(sheet, id, status, remarks) {
+  const rowNumber = findRowNumber(sheet, id);
+  if (!rowNumber) throw new Error('Pump record not found.');
+  if (status) sheet.getRange(rowNumber, 10).setValue(value(status));
+  if (remarks !== undefined) sheet.getRange(rowNumber, 12).setValue(value(remarks));
+  sheet.getRange(rowNumber, 14).setValue(new Date().toISOString().slice(0, 10));
+}
+
+function updateAssignment(sheet, id, fields) {
+  const rowNumber = findRowNumber(sheet, id);
+  if (!rowNumber) throw new Error('Pump record not found.');
+  const allowedColumns = {
+    customerName: 4,
+    siteLocation: 5,
+    contactPerson: 6,
+    mobileNo: 7,
+    dateIssued: 8,
+    salesPerson: 9,
+    status: 10,
+    expectedReturnDate: 11,
+    remarks: 12,
+    photoUrl: 13,
+  };
+  Object.keys(allowedColumns).forEach(key => {
+    if (fields[key] !== undefined) {
+      sheet.getRange(rowNumber, allowedColumns[key]).setValue(value(fields[key]));
+    }
+  });
+  sheet.getRange(rowNumber, 14).setValue(new Date().toISOString().slice(0, 10));
+}
+
+function findRowNumber(sheet, id) {
+  const records = readRecords(sheet);
+  const index = records.findIndex(item => item.id === String(id).trim().toUpperCase());
+  return index >= 0 ? index + 2 : null;
 }
 
 function rowToRecord(row) {

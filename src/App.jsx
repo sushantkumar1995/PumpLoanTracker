@@ -3,9 +3,12 @@ import {
   AlertTriangle,
   BarChart3,
   Camera,
+  CameraOff,
   CheckCircle2,
   Clipboard,
   Download,
+  LockKeyhole,
+  LogOut,
   MapPin,
   PackageCheck,
   Plus,
@@ -14,6 +17,7 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  ScanLine,
   Trash2,
   Upload,
   UserRound,
@@ -152,6 +156,21 @@ function pumpUrl(id) {
   return `${baseUrl}?pump=${encodeURIComponent(id)}`;
 }
 
+function qrImageUrl(id) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=${encodeURIComponent(pumpUrl(id))}`;
+}
+
+function extractPumpCode(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return (url.searchParams.get('pump') || raw).trim().toUpperCase();
+  } catch {
+    return raw.trim().toUpperCase();
+  }
+}
+
 export default function App() {
   const [pumps, setPumps] = useState(getStoredPumps);
   const [isLoading, setIsLoading] = useState(Boolean(sheetsApiUrl));
@@ -159,18 +178,33 @@ export default function App() {
   const [syncMessage, setSyncMessage] = useState(sheetsApiUrl ? 'Connecting to Google Sheets...' : 'Using local demo data');
   const [syncError, setSyncError] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
+  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('pumpTrackerAdmin') === 'true');
+  const [adminPin, setAdminPin] = useState(() => sessionStorage.getItem('pumpTrackerAdminPin') || '');
+  const [adminPinInput, setAdminPinInput] = useState('');
+  const [scannerActive, setScannerActive] = useState(false);
+  const [scannerError, setScannerError] = useState('');
   const [pumpForm, setPumpForm] = useState(emptyPump);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [selectedPumpId, setSelectedPumpId] = useState(() => new URLSearchParams(window.location.search).get('pump') || seedPumps[0].id);
   const [scanValue, setScanValue] = useState('');
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanTimerRef = useRef(null);
 
   useEffect(() => {
     if (!pumps.some((pump) => pump.id === selectedPumpId)) {
       setSelectedPumpId(pumps[0]?.id || '');
     }
   }, [pumps, selectedPumpId]);
+
+  useEffect(
+    () => () => {
+      stopScanner();
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -230,6 +264,80 @@ export default function App() {
     }
   }
 
+  function loginAdmin(event) {
+    event.preventDefault();
+    const pin = adminPinInput.trim();
+    if (!pin) return;
+    setAdminPin(pin);
+    setAdminPinInput('');
+    setIsAdmin(true);
+    sessionStorage.setItem('pumpTrackerAdmin', 'true');
+    sessionStorage.setItem('pumpTrackerAdminPin', pin);
+  }
+
+  function logoutAdmin() {
+    setIsAdmin(false);
+    setAdminPin('');
+    sessionStorage.removeItem('pumpTrackerAdmin');
+    sessionStorage.removeItem('pumpTrackerAdminPin');
+  }
+
+  function handleScanResult(rawValue) {
+    const normalized = extractPumpCode(rawValue);
+    setScanValue(normalized);
+    const found = decoratedPumps.find((pump) => pump.id.toUpperCase() === normalized || pump.serialNo.toUpperCase() === normalized);
+    if (found) {
+      setSelectedPumpId(found.id);
+      setQuery(found.id);
+      stopScanner();
+    } else {
+      setPumpForm({ ...emptyPump, id: normalized });
+    }
+  }
+
+  async function startScanner() {
+    setScannerError('');
+    if (!('BarcodeDetector' in window)) {
+      setScannerError('Camera scanning is not supported in this browser. Use image scan or enter Pump ID.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      streamRef.current = stream;
+      setScannerActive(true);
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] });
+      scanTimerRef.current = window.setInterval(async () => {
+        if (!videoRef.current || videoRef.current.readyState < 2) return;
+        const codes = await detector.detect(videoRef.current);
+        if (codes[0]?.rawValue) {
+          handleScanResult(codes[0].rawValue);
+        }
+      }, 700);
+    } catch (error) {
+      setScannerError(error.message || 'Unable to open camera.');
+      stopScanner();
+    }
+  }
+
+  function stopScanner() {
+    if (scanTimerRef.current) {
+      window.clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setScannerActive(false);
+  }
+
   const decoratedPumps = useMemo(
     () =>
       pumps.map((pump) => {
@@ -271,7 +379,7 @@ export default function App() {
     };
     const exists = pumps.some((pump) => pump.id === nextPump.id);
     const fallbackRecords = exists ? pumps.map((pump) => (pump.id === nextPump.id ? nextPump : pump)) : [nextPump, ...pumps];
-    await saveToSheet({ record: nextPump }, fallbackRecords);
+    await saveToSheet({ action: 'adminUpsert', adminPin, record: nextPump }, fallbackRecords);
     setSelectedPumpId(nextPump.id);
     setPumpForm(emptyPump);
   }
@@ -280,13 +388,13 @@ export default function App() {
     if (!selectedPump) return;
     const nextPump = { ...selectedPump, ...changes, updatedAt: today() };
     const fallbackRecords = pumps.map((pump) => (pump.id === selectedPump.id ? nextPump : pump));
-    await saveToSheet({ record: nextPump }, fallbackRecords);
+    await saveToSheet({ action: 'updateStatus', id: selectedPump.id, status: nextPump.status, remarks: nextPump.remarks }, fallbackRecords);
   }
 
   async function issueSelected(event) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    await updateSelected({
+    const fields = {
       customerName: formData.get('customerName'),
       siteLocation: formData.get('siteLocation'),
       contactPerson: formData.get('contactPerson'),
@@ -296,12 +404,25 @@ export default function App() {
       expectedReturnDate: formData.get('expectedReturnDate'),
       remarks: formData.get('remarks'),
       status: 'Active',
+    };
+    const nextPump = { ...selectedPump, ...fields, updatedAt: today() };
+    const fallbackRecords = pumps.map((pump) => (pump.id === selectedPump.id ? nextPump : pump));
+    await saveToSheet({ action: 'updateAssignment', id: selectedPump.id, fields }, fallbackRecords);
+  }
+
+  async function recordOutcome(event) {
+    event.preventDefault();
+    if (!selectedPump) return;
+    const formData = new FormData(event.currentTarget);
+    await updateSelected({
+      status: formData.get('status'),
+      remarks: formData.get('remarks'),
     });
   }
 
   function scanPump(event) {
     event.preventDefault();
-    const normalized = scanValue.trim().toUpperCase();
+    const normalized = extractPumpCode(scanValue);
     const found = decoratedPumps.find((pump) => pump.id.toUpperCase() === normalized || pump.serialNo.toUpperCase() === normalized);
     if (found) {
       setSelectedPumpId(found.id);
@@ -318,9 +439,7 @@ export default function App() {
     const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] });
     const codes = await detector.detect(bitmap);
     if (codes[0]?.rawValue) {
-      setScanValue(codes[0].rawValue);
-      const found = decoratedPumps.find((pump) => pump.id === codes[0].rawValue || pump.serialNo === codes[0].rawValue);
-      if (found) setSelectedPumpId(found.id);
+      handleScanResult(codes[0].rawValue);
     }
     event.target.value = '';
   }
@@ -355,11 +474,11 @@ export default function App() {
 
   async function removePump(id) {
     const fallbackRecords = pumps.filter((pump) => pump.id !== id);
-    await saveToSheet({ action: 'delete', id }, fallbackRecords);
+    await saveToSheet({ action: 'delete', id, adminPin }, fallbackRecords);
   }
 
   async function resetDemo() {
-    await saveToSheet({ action: 'bulkReplace', records: seedPumps }, seedPumps);
+    await saveToSheet({ action: 'bulkReplace', adminPin, records: seedPumps }, seedPumps);
     setSelectedPumpId(seedPumps[0].id);
   }
 
@@ -397,13 +516,52 @@ export default function App() {
               <Search size={16} />
               Open
             </button>
+            <button className="button secondary" type="button" onClick={scannerActive ? stopScanner : startScanner}>
+              {scannerActive ? <CameraOff size={16} /> : <ScanLine size={16} />}
+              {scannerActive ? 'Stop' : 'Scan'}
+            </button>
             <button className="button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
               <Camera size={16} />
               Image
             </button>
           </div>
+          {scannerActive && (
+            <div className="camera-frame">
+              <video ref={videoRef} playsInline muted />
+            </div>
+          )}
+          {scannerError && <small className="scan-error">{scannerError}</small>}
           <input ref={fileInputRef} className="hidden-input" type="file" accept="image/*" capture="environment" onChange={scanImage} />
         </form>
+
+        <section className="admin-box" aria-label="Admin access">
+          {isAdmin ? (
+            <>
+              <div>
+                <small>Admin mode</small>
+                <strong>Inventory unlocked</strong>
+              </div>
+              <button className="button secondary" type="button" onClick={logoutAdmin}>
+                <LogOut size={16} />
+                Logout
+              </button>
+            </>
+          ) : (
+            <form onSubmit={loginAdmin}>
+              <label>
+                Admin PIN
+                <div className="scan-row">
+                  <LockKeyhole size={17} />
+                  <input value={adminPinInput} onChange={(event) => setAdminPinInput(event.target.value)} type="password" placeholder="Required for inventory" />
+                </div>
+              </label>
+              <button className="button secondary" type="submit">
+                <LockKeyhole size={16} />
+                Unlock
+              </button>
+            </form>
+          )}
+        </section>
 
         <div className="sidebar-actions">
           <button className="button secondary" type="button" onClick={exportCsv}>
@@ -423,7 +581,7 @@ export default function App() {
             <p className="eyebrow">Free-on-loan inventory</p>
             <h1>Pump issue and return tracker</h1>
           </div>
-          <button className="button ghost" type="button" onClick={resetDemo} disabled={isSaving}>
+          <button className="button ghost" type="button" onClick={resetDemo} disabled={isSaving || !isAdmin}>
             <RotateCcw size={16} />
             Reset demo
           </button>
@@ -501,15 +659,17 @@ export default function App() {
                     <p className="eyebrow">Scanned record</p>
                     <h2>{selectedPump.id}</h2>
                   </div>
-                  <button className="icon-button" type="button" aria-label="Delete selected pump" onClick={() => removePump(selectedPump.id)}>
-                    <Trash2 size={17} />
-                  </button>
+                  {isAdmin && (
+                    <button className="icon-button" type="button" aria-label="Delete selected pump" onClick={() => removePump(selectedPump.id)}>
+                      <Trash2 size={17} />
+                    </button>
+                  )}
                 </div>
 
                 <div className="barcode-label">
-                  <QrCode size={28} />
+                  <img src={qrImageUrl(selectedPump.id)} alt={`QR code for ${selectedPump.id}`} />
                   <div>
-                    <small>Barcode / QR payload</small>
+                    <small>QR code opens this pump</small>
                     <strong>{selectedPump.id}</strong>
                   </div>
                   <button className="button ghost compact-button" type="button" onClick={() => navigator.clipboard?.writeText(pumpUrl(selectedPump.id))}>
@@ -557,6 +717,27 @@ export default function App() {
                 </div>
 
                 <p className="notes">{selectedPump.remarks || 'No remarks recorded.'}</p>
+
+                <form className="outcome-form" onSubmit={recordOutcome}>
+                  <label>
+                    Record return or replacement
+                    <select name="status" defaultValue={selectedPump.status} key={`${selectedPump.id}-outcome-status`}>
+                      <option>Returned</option>
+                      <option>Replaced</option>
+                      <option>Damaged</option>
+                      <option>Lost</option>
+                      <option>Active</option>
+                    </select>
+                  </label>
+                  <label>
+                    Remarks
+                    <textarea name="remarks" defaultValue={selectedPump.remarks || ''} rows="2" key={`${selectedPump.id}-outcome-remarks`} />
+                  </label>
+                  <button className="button primary" type="submit" disabled={isSaving}>
+                    <CheckCircle2 size={17} />
+                    Save status
+                  </button>
+                </form>
               </>
             ) : (
               <p className="empty-state">Add or scan a pump to begin tracking.</p>
@@ -564,7 +745,8 @@ export default function App() {
           </div>
         </section>
 
-        <section className="forms-grid">
+        <section className={`forms-grid ${!isAdmin ? 'single-form' : ''}`}>
+          {isAdmin && (
           <form className="form-panel" onSubmit={savePump}>
             <div className="section-heading">
               <div>
@@ -597,6 +779,7 @@ export default function App() {
               Save pump
             </button>
           </form>
+          )}
 
           <form className="form-panel" onSubmit={issueSelected}>
             <div className="section-heading">
