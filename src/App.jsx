@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
-  Camera,
   CameraOff,
   CheckCircle2,
   Clipboard,
@@ -13,7 +12,6 @@ import {
   PackageCheck,
   Plus,
   Printer,
-  QrCode,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -187,8 +185,6 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [selectedPumpId, setSelectedPumpId] = useState(() => new URLSearchParams(window.location.search).get('pump') || seedPumps[0].id);
-  const [scanValue, setScanValue] = useState('');
-  const fileInputRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const scanTimerRef = useRef(null);
@@ -284,7 +280,6 @@ export default function App() {
 
   function handleScanResult(rawValue) {
     const normalized = extractPumpCode(rawValue);
-    setScanValue(normalized);
     const found = decoratedPumps.find((pump) => pump.id.toUpperCase() === normalized || pump.serialNo.toUpperCase() === normalized);
     if (found) {
       setSelectedPumpId(found.id);
@@ -298,7 +293,7 @@ export default function App() {
   async function startScanner() {
     setScannerError('');
     if (!('BarcodeDetector' in window)) {
-      setScannerError('Camera scanning is not supported in this browser. Use image scan or enter Pump ID.');
+      setScannerError('QR scanning is not supported in this browser. Use global search to open a pump.');
       return;
     }
 
@@ -420,30 +415,6 @@ export default function App() {
     });
   }
 
-  function scanPump(event) {
-    event.preventDefault();
-    const normalized = extractPumpCode(scanValue);
-    const found = decoratedPumps.find((pump) => pump.id.toUpperCase() === normalized || pump.serialNo.toUpperCase() === normalized);
-    if (found) {
-      setSelectedPumpId(found.id);
-      setQuery(found.id);
-    } else {
-      setPumpForm({ ...emptyPump, id: normalized });
-    }
-  }
-
-  async function scanImage(event) {
-    const file = event.target.files?.[0];
-    if (!file || !('BarcodeDetector' in window)) return;
-    const bitmap = await createImageBitmap(file);
-    const detector = new window.BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13'] });
-    const codes = await detector.detect(bitmap);
-    if (codes[0]?.rawValue) {
-      handleScanResult(codes[0].rawValue);
-    }
-    event.target.value = '';
-  }
-
   function exportCsv() {
     const rows = [
       ['Pump ID', 'Pump Model', 'Serial No.', 'Customer Name', 'Site Location', 'Contact Person', 'Mobile No.', 'Date Issued', 'Sales Person', 'Status', 'Expected Return Date', 'Remarks'],
@@ -502,37 +473,6 @@ export default function App() {
           <Metric icon={AlertTriangle} label="Due return" value={String(totals.dueReturn)} />
           <Metric icon={ShieldAlert} label="Lost / damaged" value={String(totals.exception)} />
         </div>
-
-        <form className="scan-box" onSubmit={scanPump}>
-          <label>
-            Scan or enter Pump ID
-            <div className="scan-row">
-              <QrCode size={17} />
-              <input value={scanValue} onChange={(event) => setScanValue(event.target.value)} placeholder="PUMP-0001" />
-            </div>
-          </label>
-          <div className="scan-actions">
-            <button className="button secondary" type="submit">
-              <Search size={16} />
-              Open
-            </button>
-            <button className="button secondary" type="button" onClick={scannerActive ? stopScanner : startScanner}>
-              {scannerActive ? <CameraOff size={16} /> : <ScanLine size={16} />}
-              {scannerActive ? 'Stop' : 'Scan'}
-            </button>
-            <button className="button secondary" type="button" onClick={() => fileInputRef.current?.click()}>
-              <Camera size={16} />
-              Image
-            </button>
-          </div>
-          {scannerActive && (
-            <div className="camera-frame">
-              <video ref={videoRef} playsInline muted />
-            </div>
-          )}
-          {scannerError && <small className="scan-error">{scannerError}</small>}
-          <input ref={fileInputRef} className="hidden-input" type="file" accept="image/*" capture="environment" onChange={scanImage} />
-        </form>
 
         <section className="admin-box" aria-label="Admin access">
           {isAdmin ? (
@@ -600,8 +540,12 @@ export default function App() {
         <section className="controls-panel" aria-label="Pump filters">
           <label className="search-field">
             <Search size={17} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pump, customer, serial, site, salesperson" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pump, customer, serial, site" />
           </label>
+          <button className="button ghost scan-trigger" type="button" onClick={scannerActive ? stopScanner : startScanner}>
+            {scannerActive ? <CameraOff size={16} /> : <ScanLine size={16} />}
+            {scannerActive ? 'Stop scan' : 'Scan QR'}
+          </button>
           <div className="segmented" aria-label="Filter by status">
             {['All', ...statuses].map((item) => (
               <button className={status === item ? 'is-active' : ''} type="button" key={item} onClick={() => setStatus(item)}>
@@ -610,6 +554,17 @@ export default function App() {
             ))}
           </div>
         </section>
+
+        {(scannerActive || scannerError) && (
+          <section className={`scanner-panel ${scannerError ? 'has-error' : ''}`} aria-live="polite">
+            {scannerActive && (
+              <div className="camera-frame">
+                <video ref={videoRef} playsInline muted />
+              </div>
+            )}
+            {scannerError && <small className="scan-error">{scannerError}</small>}
+          </section>
+        )}
 
         <section className="content-grid">
           <div className="loan-ledger">

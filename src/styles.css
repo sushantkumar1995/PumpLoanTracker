@@ -144,19 +144,6 @@ button {
   margin-top: auto;
 }
 
-.scan-box {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid oklch(46% 0.04 88);
-  border-radius: var(--radius);
-  background: oklch(35% 0.034 88);
-}
-
-.scan-box label {
-  color: oklch(84% 0.019 88);
-}
-
 .scan-row {
   display: grid;
   grid-template-columns: 18px 1fr;
@@ -176,16 +163,6 @@ button {
   color: oklch(96% 0.012 88);
   background: transparent;
   text-transform: uppercase;
-}
-
-.scan-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.hidden-input {
-  display: none;
 }
 
 .camera-frame {
@@ -335,7 +312,8 @@ textarea:focus-visible,
 .loan-ledger,
 .detail-panel,
 .form-panel,
-.sync-banner {
+.sync-banner,
+.scanner-panel {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: var(--radius);
@@ -344,6 +322,16 @@ textarea:focus-visible,
 
 .controls-panel {
   padding: 12px;
+  min-width: 0;
+}
+
+.scanner-panel {
+  padding: 12px;
+}
+
+.scanner-panel.has-error {
+  border-color: oklch(82% 0.06 30);
+  background: oklch(96% 0.025 30);
 }
 
 .sync-banner {
@@ -384,6 +372,10 @@ textarea:focus-visible,
   flex: 1;
 }
 
+.scan-trigger {
+  flex: 0 0 auto;
+}
+
 .search-field input {
   border: 0;
   outline: 0;
@@ -395,6 +387,7 @@ textarea:focus-visible,
 
 .segmented {
   display: inline-flex;
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
@@ -780,7 +773,7 @@ textarea {
 @media (max-width: 760px) {
   .workspace,
   .sidebar {
-    padding: 18px;
+    padding: 14px;
     min-width: 0;
   }
 
@@ -799,15 +792,29 @@ textarea {
 
   .summary-stack {
     grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric {
+    grid-template-columns: 36px 1fr;
+    padding: 10px;
+  }
+
+  .metric span,
+  .brand-mark {
+    width: 36px;
+    height: 36px;
   }
 
   .segmented {
     width: 100%;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow: visible;
   }
 
   .segmented button {
-    flex: 1 0 auto;
+    flex: 1 1 calc(33.333% - 1px);
+    min-width: 96px;
   }
 
   .loan-table {
@@ -848,14 +855,20 @@ textarea {
   .app-shell,
   .sidebar,
   .workspace {
-    width: 100vw;
-    max-width: 100vw;
+    width: 100%;
+    max-width: 100%;
   }
 
-  .summary-stack,
-  .sidebar-actions,
+  .sidebar {
+    gap: 14px;
+  }
+
   .table-row {
     grid-template-columns: 1fr;
+  }
+
+  .sidebar-actions {
+    grid-template-columns: 1fr 1fr;
   }
 
   .topbar h1 {
@@ -890,7 +903,7 @@ textarea {
   .forms-grid,
   .icon-button,
   .topbar .button,
-  .scan-box {
+  .scanner-panel {
     display: none;
   }
 
