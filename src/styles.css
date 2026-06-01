@@ -144,6 +144,50 @@ button {
   margin-top: auto;
 }
 
+.scan-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid oklch(46% 0.04 88);
+  border-radius: var(--radius);
+  background: oklch(35% 0.034 88);
+}
+
+.scan-box label {
+  color: oklch(84% 0.019 88);
+}
+
+.scan-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid oklch(49% 0.04 88);
+  border-radius: var(--radius);
+  background: oklch(29% 0.03 88);
+}
+
+.scan-row input {
+  min-height: 38px;
+  border: 0;
+  padding: 0;
+  color: oklch(96% 0.012 88);
+  background: transparent;
+  text-transform: uppercase;
+}
+
+.scan-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.hidden-input {
+  display: none;
+}
+
 .workspace {
   padding: 28px;
   display: grid;
@@ -165,6 +209,10 @@ button {
 .section-heading h2 {
   margin: 4px 0 0;
   line-height: 1.1;
+}
+
+.topbar > div {
+  min-width: 0;
 }
 
 .topbar h1 {
@@ -208,6 +256,11 @@ textarea:focus-visible,
 .table-row:focus-visible {
   outline: 3px solid oklch(72% 0.12 154 / 0.42);
   outline-offset: 2px;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .primary {
@@ -327,6 +380,10 @@ textarea:focus-visible,
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.pump-row {
+  grid-template-columns: minmax(150px, 1.1fr) minmax(150px, 1fr) minmax(98px, 0.65fr) minmax(118px, 0.78fr) 90px;
+}
+
 .table-row.selected {
   border-color: oklch(58% 0.1 154);
   background: oklch(94% 0.035 154);
@@ -359,6 +416,10 @@ textarea:focus-visible,
   color: var(--danger) !important;
 }
 
+.warning {
+  color: var(--warning) !important;
+}
+
 .status {
   justify-self: start;
   border-radius: 999px;
@@ -373,6 +434,11 @@ textarea:focus-visible,
   background: oklch(92% 0.045 154);
 }
 
+.status.available {
+  color: var(--accent-deep);
+  background: oklch(92% 0.045 154);
+}
+
 .status.watch {
   color: oklch(42% 0.09 62);
   background: oklch(92% 0.062 68);
@@ -381,6 +447,26 @@ textarea:focus-visible,
 .status.overdue {
   color: var(--danger);
   background: oklch(92% 0.045 30);
+}
+
+.status.returned {
+  color: oklch(42% 0.05 250);
+  background: oklch(92% 0.03 250);
+}
+
+.status.damaged {
+  color: oklch(42% 0.09 62);
+  background: oklch(92% 0.062 68);
+}
+
+.status.lost {
+  color: var(--danger);
+  background: oklch(92% 0.045 30);
+}
+
+.status.replaced {
+  color: oklch(40% 0.08 292);
+  background: oklch(92% 0.04 292);
 }
 
 .status.closed {
@@ -402,6 +488,75 @@ textarea:focus-visible,
 
 .balance-strip strong {
   font-size: 1.2rem;
+}
+
+.barcode-label {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px dashed oklch(66% 0.075 154);
+  border-radius: var(--radius);
+  background: oklch(94% 0.035 154);
+}
+
+.barcode-label svg {
+  color: var(--accent-deep);
+}
+
+.barcode-label small,
+.contact-block p {
+  color: var(--muted);
+}
+
+.barcode-label strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 1.14rem;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.status-action {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 11px;
+  color: var(--muted);
+  background: var(--surface);
+  font-weight: 800;
+}
+
+.status-action.is-active {
+  color: oklch(96% 0.012 154);
+  border-color: var(--accent-deep);
+  background: var(--accent-deep);
+}
+
+.contact-block {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.contact-block p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 
 .detail-list {
@@ -551,7 +706,8 @@ textarea {
   }
 
   .topbar h1 {
-    font-size: 1.45rem;
+    font-size: 1.28rem;
+    line-height: 1.18;
   }
 
   .summary-stack {
@@ -580,6 +736,10 @@ textarea {
     grid-template-columns: 1fr 1fr;
     gap: 12px;
     min-width: 0;
+  }
+
+  .pump-row {
+    grid-template-columns: 1fr 1fr;
   }
 
   .table-row span:first-child,
@@ -612,7 +772,7 @@ textarea {
   }
 
   .topbar h1 {
-    font-size: 1.32rem;
+    font-size: 1.18rem;
     max-width: 100%;
     overflow-wrap: anywhere;
   }
@@ -627,6 +787,14 @@ textarea {
     align-items: start;
     flex-direction: column;
   }
+
+  .barcode-label {
+    grid-template-columns: 36px 1fr;
+  }
+
+  .barcode-label .button {
+    grid-column: 1 / -1;
+  }
 }
 
 @media print {
@@ -634,7 +802,8 @@ textarea {
   .controls-panel,
   .forms-grid,
   .icon-button,
-  .topbar .button {
+  .topbar .button,
+  .scan-box {
     display: none;
   }
 

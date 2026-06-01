@@ -1,7 +1,7 @@
 {
   "name": "pump-loan-tracker",
   "version": "0.1.0",
-  "description": "React app for tracking pump loans, repayments, balances, and follow-ups.",
+  "description": "React app for tracking free-on-loan pumps, barcode lookup, customer issue status, and return follow-ups.",
   "type": "module",
   "scripts": {
     "dev": "vite",

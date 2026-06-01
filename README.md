@@ -1,12 +1,15 @@
-# Pump Loan Tracker
+# Pump Free-on-Loan Tracker
 
-A responsive React app for tracking pump credit loans, accrued interest, repayments, balances, and overdue follow-ups.
+A responsive React app for tracking company pumps issued free on loan to customers. It works like a lightweight master sheet with barcode lookup, mobile updates, dashboard counts, and CSV export.
 
 ## Features
 
-- Dashboard totals for outstanding balance, collected amount, interest, and overdue loans
-- Loan ledger with search, status filters, and selected-account details
-- Payment logging with mode, date, amount, and notes
+- Pump master records with Pump ID, model, serial number, customer, site, contact, salesperson, issue date, expected return date, status, and remarks
+- Barcode / QR payload lookup by Pump ID or serial number
+- Customer issue and return-status workflow
+- Status options: Available, Active, Returned, Damaged, Lost, Replaced
+- Dashboard totals for available, on-loan, due-return, and lost/damaged pumps
+- Customer-wise and pump-wise search
 - Local persistence through `localStorage`
 - CSV export and print support
 - Desktop and mobile responsive layouts
