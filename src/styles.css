@@ -174,7 +174,8 @@ button {
 }
 
 .admin-box form,
-.admin-box {
+.admin-box,
+.admin-login-stack {
   display: grid;
   gap: 12px;
 }
@@ -187,6 +188,23 @@ button {
 .admin-box strong {
   display: block;
   margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.google-login-slot {
+  min-height: 40px;
+  width: 100%;
+}
+
+.google-login-slot > div {
+  max-width: 100%;
+}
+
+.admin-note {
+  margin: 0;
+  color: oklch(83% 0.035 250);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .workspace {

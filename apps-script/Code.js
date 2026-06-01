@@ -2,7 +2,10 @@ const SCRIPT_PROPS = PropertiesService.getScriptProperties();
 const SHEET_ID_KEY = 'PUMP_TRACKER_SHEET_ID';
 const SHEET_SOURCES_KEY = 'PUMP_TRACKER_SHEET_SOURCES';
 const ADMIN_PIN_KEY = 'PUMP_TRACKER_ADMIN_PIN';
+const ADMIN_EMAILS_KEY = 'PUMP_TRACKER_ADMIN_EMAILS';
+const GOOGLE_CLIENT_ID_KEY = 'PUMP_TRACKER_GOOGLE_CLIENT_ID';
 const DEFAULT_ADMIN_PIN = 'admin123';
+const DEFAULT_ADMIN_EMAILS = ['sushantkumar1995@gmail.com'];
 const SHEET_NAME = 'Pumps';
 const HEADERS = [
   'Pump ID',
@@ -52,7 +55,7 @@ function doPost(event) {
   try {
     const body = JSON.parse(event.postData.contents || '{}');
     if (body.action === 'setSpreadsheet') {
-      requireAdmin(body.adminPin);
+      requireAdmin(body);
       const spreadsheet = setSpreadsheet(body.spreadsheetId || body.spreadsheetUrl);
       const sheet = getPumpSheet(spreadsheet);
       return jsonResponse({
@@ -65,7 +68,7 @@ function doPost(event) {
     }
 
     if (body.action === 'createSpreadsheet') {
-      requireAdmin(body.adminPin);
+      requireAdmin(body);
       const spreadsheet = SpreadsheetApp.create(value(body.sheetName) || 'Pump Free-on-Loan Tracker Database');
       SCRIPT_PROPS.setProperty(SHEET_ID_KEY, spreadsheet.getId());
       const sheet = getPumpSheet(spreadsheet);
@@ -80,7 +83,7 @@ function doPost(event) {
     }
 
     if (body.action === 'listSources') {
-      requireAdmin(body.adminPin);
+      requireAdmin(body);
       const spreadsheet = getSpreadsheet();
       return jsonResponse({
         ok: true,
@@ -96,13 +99,13 @@ function doPost(event) {
     seedIfEmpty(sheet);
 
     if (body.action === 'bulkReplace' && Array.isArray(body.records)) {
-      requireAdmin(body.adminPin);
+      requireAdmin(body);
       replaceRecords(sheet, body.records);
     } else if (body.action === 'delete' && body.id) {
-      requireAdmin(body.adminPin);
+      requireAdmin(body);
       deleteRecord(sheet, body.id);
     } else if (body.action === 'adminUpsert' && body.record) {
-      requireAdmin(body.adminPin);
+      requireAdmin(body);
       upsertRecord(sheet, body.record);
     } else if (body.action === 'updateStatus' && body.id) {
       updateStatus(sheet, body.id, body.status, body.remarks);
@@ -142,11 +145,40 @@ function parseSpreadsheetId(input) {
   return raw;
 }
 
-function requireAdmin(pin) {
+function requireAdmin(body) {
   const configuredPin = SCRIPT_PROPS.getProperty(ADMIN_PIN_KEY) || DEFAULT_ADMIN_PIN;
-  if (String(pin || '') !== configuredPin) {
-    throw new Error('Admin PIN required for inventory changes.');
+  if (String(body.adminPin || '') === configuredPin) {
+    return;
   }
+
+  const admin = verifyGoogleAdmin(body.adminToken);
+  if (!admin) {
+    throw new Error('Admin Google login or PIN required for inventory changes.');
+  }
+}
+
+function verifyGoogleAdmin(idToken) {
+  if (!idToken) return null;
+  const response = UrlFetchApp.fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`, {
+    muteHttpExceptions: true,
+  });
+  if (response.getResponseCode() !== 200) return null;
+
+  const claims = JSON.parse(response.getContentText());
+  if (claims.email_verified !== 'true' && claims.email_verified !== true) return null;
+
+  const configuredClientId = value(SCRIPT_PROPS.getProperty(GOOGLE_CLIENT_ID_KEY));
+  if (configuredClientId && claims.aud !== configuredClientId) return null;
+
+  const allowedEmails = getAdminEmails();
+  const email = value(claims.email).toLowerCase();
+  return allowedEmails.includes(email) ? { email, name: value(claims.name) } : null;
+}
+
+function getAdminEmails() {
+  const configured = value(SCRIPT_PROPS.getProperty(ADMIN_EMAILS_KEY));
+  const emails = configured ? configured.split(',') : DEFAULT_ADMIN_EMAILS;
+  return emails.map(item => value(item).toLowerCase()).filter(Boolean);
 }
 
 function getSpreadsheet() {

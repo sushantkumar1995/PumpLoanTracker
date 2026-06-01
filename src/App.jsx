@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -23,6 +23,7 @@ import {
 
 const storageKey = 'free-on-loan-pump-tracker:v2';
 const sheetsApiUrl = import.meta.env.VITE_GOOGLE_SHEETS_API_URL || '';
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const statuses = ['Available', 'Active', 'Returned', 'Damaged', 'Lost', 'Replaced'];
 
 const seedPumps = [
@@ -157,6 +158,23 @@ function qrImageUrl(id) {
   return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=${encodeURIComponent(pumpUrl(id))}`;
 }
 
+function decodeGoogleCredential(credential) {
+  try {
+    const payload = credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(window.atob(payload));
+  } catch {
+    return null;
+  }
+}
+
+function getStoredGoogleUser() {
+  try {
+    return JSON.parse(sessionStorage.getItem('pumpTrackerGoogleUser') || 'null');
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [pumps, setPumps] = useState(getStoredPumps);
   const [isLoading, setIsLoading] = useState(Boolean(sheetsApiUrl));
@@ -165,7 +183,9 @@ export default function App() {
   const [syncError, setSyncError] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
   const [sheetSources, setSheetSources] = useState([]);
-  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('pumpTrackerAdmin') === 'true');
+  const [googleToken, setGoogleToken] = useState(() => sessionStorage.getItem('pumpTrackerGoogleToken') || '');
+  const [googleUser, setGoogleUser] = useState(getStoredGoogleUser);
+  const [isAdmin, setIsAdmin] = useState(() => sessionStorage.getItem('pumpTrackerAdmin') === 'true' || Boolean(sessionStorage.getItem('pumpTrackerGoogleToken')));
   const [adminPin, setAdminPin] = useState(() => sessionStorage.getItem('pumpTrackerAdminPin') || '');
   const [adminPinInput, setAdminPinInput] = useState('');
   const [sheetInput, setSheetInput] = useState('');
@@ -175,6 +195,7 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('All');
   const [selectedPumpId, setSelectedPumpId] = useState(() => new URLSearchParams(window.location.search).get('pump') || seedPumps[0].id);
+  const googleButtonRef = useRef(null);
 
   useEffect(() => {
     if (!pumps.some((pump) => pump.id === selectedPumpId)) {
@@ -218,12 +239,70 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isAdmin && adminPin) {
-      loadAdminSources(adminPin);
+    if (isAdmin && (adminPin || googleToken)) {
+      loadAdminSources(adminPin, googleToken);
     }
     // Admin source list is loaded when the persisted admin session is restored.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, adminPin]);
+  }, [isAdmin, adminPin, googleToken]);
+
+  useEffect(() => {
+    if (!googleClientId || !googleButtonRef.current) return;
+
+    let cancelled = false;
+
+    function renderGoogleButton() {
+      if (cancelled || !window.google?.accounts?.id || !googleButtonRef.current) return;
+      googleButtonRef.current.innerHTML = '';
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: (response) => {
+          const user = decodeGoogleCredential(response.credential);
+          if (!user?.email) {
+            setSyncMessage('Google login failed');
+            setSyncError('Google did not return an email address.');
+            return;
+          }
+          setGoogleToken(response.credential);
+          setGoogleUser(user);
+          setAdminPin('');
+          setIsAdmin(true);
+          sessionStorage.setItem('pumpTrackerGoogleToken', response.credential);
+          sessionStorage.setItem('pumpTrackerGoogleUser', JSON.stringify(user));
+          sessionStorage.setItem('pumpTrackerAdmin', 'true');
+          sessionStorage.removeItem('pumpTrackerAdminPin');
+          loadAdminSources('', response.credential);
+        },
+      });
+      window.google.accounts.id.renderButton(googleButtonRef.current, {
+        theme: 'outline',
+        size: 'large',
+        text: 'signin_with',
+        shape: 'rectangular',
+        width: googleButtonRef.current.offsetWidth || 220,
+      });
+    }
+
+    if (window.google?.accounts?.id) {
+      renderGoogleButton();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = renderGoogleButton;
+    document.head.appendChild(script);
+
+    return () => {
+      cancelled = true;
+    };
+    // Google button is only rendered for the fixed configured client id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [googleClientId]);
 
   function applyRecords(records, message = 'Saved to Google Sheet') {
     setPumps(records);
@@ -242,7 +321,7 @@ export default function App() {
   async function saveToSheet(payload, fallbackRecords) {
     setIsSaving(true);
     try {
-      const data = await sheetRequest(payload);
+      const data = await sheetRequest(withAdminAuth(payload));
       applyRecords(data.records);
       if (data.spreadsheetUrl) setSheetUrl(data.spreadsheetUrl);
       return data.records;
@@ -279,25 +358,42 @@ export default function App() {
     const pin = adminPinInput.trim();
     if (!pin) return;
     setAdminPin(pin);
+    setGoogleToken('');
+    setGoogleUser(null);
     setAdminPinInput('');
     setIsAdmin(true);
     sessionStorage.setItem('pumpTrackerAdmin', 'true');
     sessionStorage.setItem('pumpTrackerAdminPin', pin);
+    sessionStorage.removeItem('pumpTrackerGoogleToken');
+    sessionStorage.removeItem('pumpTrackerGoogleUser');
     loadAdminSources(pin);
   }
 
   function logoutAdmin() {
     setIsAdmin(false);
     setAdminPin('');
+    setGoogleToken('');
+    setGoogleUser(null);
     sessionStorage.removeItem('pumpTrackerAdmin');
     sessionStorage.removeItem('pumpTrackerAdminPin');
+    sessionStorage.removeItem('pumpTrackerGoogleToken');
+    sessionStorage.removeItem('pumpTrackerGoogleUser');
+    window.google?.accounts?.id?.disableAutoSelect();
   }
 
-  async function loadAdminSources(pin = adminPin) {
-    if (!pin || !sheetsApiUrl) return;
+  function withAdminAuth(payload = {}) {
+    return {
+      ...payload,
+      adminPin,
+      adminToken: googleToken,
+    };
+  }
+
+  async function loadAdminSources(pin = adminPin, token = googleToken) {
+    if ((!pin && !token) || !sheetsApiUrl) return;
     setIsLoading(true);
     try {
-      const data = await sheetRequest({ action: 'listSources', adminPin: pin });
+      const data = await sheetRequest({ action: 'listSources', adminPin: pin, adminToken: token });
       setSheetUrl(data.spreadsheetUrl || '');
       setSheetInput(data.spreadsheetUrl || '');
       setSheetSources(data.sources || []);
@@ -356,7 +452,7 @@ export default function App() {
     };
     const exists = pumps.some((pump) => pump.id === nextPump.id);
     const fallbackRecords = exists ? pumps.map((pump) => (pump.id === nextPump.id ? nextPump : pump)) : [nextPump, ...pumps];
-    await saveToSheet({ action: 'adminUpsert', adminPin, record: nextPump }, fallbackRecords);
+    await saveToSheet({ action: 'adminUpsert', record: nextPump }, fallbackRecords);
     setSelectedPumpId(nextPump.id);
     setPumpForm(emptyPump);
   }
@@ -427,14 +523,14 @@ export default function App() {
 
   async function removePump(id) {
     const fallbackRecords = pumps.filter((pump) => pump.id !== id);
-    await saveToSheet({ action: 'delete', id, adminPin }, fallbackRecords);
+    await saveToSheet({ action: 'delete', id }, fallbackRecords);
   }
 
   async function changeSheetSource(event) {
     event.preventDefault();
     setIsSaving(true);
     try {
-      const data = await sheetRequest({ action: 'setSpreadsheet', adminPin, spreadsheetUrl: sheetInput });
+      const data = await sheetRequest(withAdminAuth({ action: 'setSpreadsheet', spreadsheetUrl: sheetInput }));
       applySheetResponse(data, 'Connected to selected Google Sheet');
     } catch (error) {
       setSyncMessage('Sheet change failed');
@@ -447,7 +543,7 @@ export default function App() {
   async function createNewSheet() {
     setIsSaving(true);
     try {
-      const data = await sheetRequest({ action: 'createSpreadsheet', adminPin, sheetName: sheetNameInput });
+      const data = await sheetRequest(withAdminAuth({ action: 'createSpreadsheet', sheetName: sheetNameInput }));
       applySheetResponse(data, 'Created and selected new inventory sheet');
     } catch (error) {
       setSyncMessage('Sheet creation failed');
@@ -460,7 +556,7 @@ export default function App() {
   async function switchSheetSource(source) {
     setIsSaving(true);
     try {
-      const data = await sheetRequest({ action: 'setSpreadsheet', adminPin, spreadsheetId: source.id });
+      const data = await sheetRequest(withAdminAuth({ action: 'setSpreadsheet', spreadsheetId: source.id }));
       applySheetResponse(data, `Viewing ${source.name}`);
     } catch (error) {
       setSyncMessage('Sheet switch failed');
@@ -496,7 +592,7 @@ export default function App() {
             <>
               <div>
                 <small>Admin mode</small>
-                <strong>Inventory unlocked</strong>
+                <strong>{googleUser?.email || 'Inventory unlocked'}</strong>
               </div>
               <button className="button secondary" type="button" onClick={logoutAdmin}>
                 <LogOut size={16} />
@@ -504,19 +600,30 @@ export default function App() {
               </button>
             </>
           ) : (
-            <form onSubmit={loginAdmin}>
-              <label>
-                Admin PIN
-                <div className="scan-row">
-                  <LockKeyhole size={17} />
-                  <input value={adminPinInput} onChange={(event) => setAdminPinInput(event.target.value)} type="password" placeholder="Required for inventory" />
-                </div>
-              </label>
-              <button className="button secondary" type="submit">
-                <LockKeyhole size={16} />
-                Unlock
-              </button>
-            </form>
+            <div className="admin-login-stack">
+              <div>
+                <small>Admin login</small>
+                <strong>Use approved Google account</strong>
+              </div>
+              {googleClientId ? (
+                <div className="google-login-slot" ref={googleButtonRef} />
+              ) : (
+                <p className="admin-note">Google login needs a client ID.</p>
+              )}
+              <form onSubmit={loginAdmin}>
+                <label>
+                  Admin PIN
+                  <div className="scan-row">
+                    <LockKeyhole size={17} />
+                    <input value={adminPinInput} onChange={(event) => setAdminPinInput(event.target.value)} type="password" placeholder="Fallback PIN" />
+                  </div>
+                </label>
+                <button className="button secondary" type="submit">
+                  <LockKeyhole size={16} />
+                  Unlock
+                </button>
+              </form>
+            </div>
           )}
         </section>
 
